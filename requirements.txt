@@ -1,0 +1,11 @@
+streamlit
+numpy
+pandas
+joblib
+scikit-learn
+opencv-python-headless
+
+torch
+torchvision
+timm
+segmentation-models-pytorch

@@ -1,0 +1,10 @@
+/data/
+/dataset/
+/dataset_10cm/
+/venv/
+
+__pycache__/
+*.pyc
+
+.streamlit/secrets.toml
+.fileaudit.json
