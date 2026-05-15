@@ -167,31 +167,43 @@ def run_one(
     reg=None,
     feature_cols=None,
 ):
+    # Asegurar device consistente dentro del módulo de cálculo
+    try:
+        slump_calc2.DEVICE = device
+    except Exception:
+        pass
+
     feats = slump_calc2.calcular_asentamiento_desde_imagen(image_bgr, model)
     if feats is None:
         raise RuntimeError("No se pudo calcular asentamiento (feats=None).")
 
     asent_modelo = float(feats["asentamiento_modelo_cm"])
 
+    # Corrección (una sola vez, sin duplicados)
     error_pred = None
     asent_corregido = None
     if reg is not None and feature_cols:
-        row = {k: feats.get(k, 0.0) for k in feature_cols}
-        X = pd.DataFrame([row], columns=feature_cols)
-        for c in feature_cols:
-            X[c] = pd.to_numeric(X[c], errors="coerce").fillna(0.0)
+        missing = [k for k in feature_cols if k not in feats]
+        if not missing:
+            row = {k: feats[k] for k in feature_cols}
+            X = pd.DataFrame([row], columns=feature_cols)
+            for c in feature_cols:
+                X[c] = pd.to_numeric(X[c], errors="coerce").fillna(0.0)
 
-        error_pred = float(reg.predict(X)[0])
-        asent_corregido = asent_modelo - error_pred
-        if asent_corregido < 0:
-            asent_corregido = 0.0
+            error_pred = float(reg.predict(X)[0])
+            asent_corregido = asent_modelo - error_pred
+            if asent_corregido < 0:
+                asent_corregido = 0.0
 
-    vis = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    # Visual
+    vis_orig = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
     if do_overlay:
         pred_mask = predict_mask_classes(image_bgr, model, device)
-        pred_color = class_to_color(pred_mask, inv_color_map)
-        vis = overlay(vis, pred_color, alpha=alpha_overlay)
+        mask_rgb = class_to_color(pred_mask, inv_color_map)
+        vis = overlay(vis_orig, mask_rgb, alpha=alpha_overlay)
+    else:
+        vis = vis_orig.copy()
 
     h, w = vis.shape[:2]
     if draw_lines:
@@ -199,6 +211,17 @@ def run_one(
         y_barra = int(feats.get("y_barra", -1))
         y_marca = int(feats.get("y_marca", -1))
         x_ref = int(feats.get("x_ref", -1))
+
+        bx = feats.get("mark10_bbox_x", np.nan)
+        by = feats.get("mark10_bbox_y", np.nan)
+        bw = feats.get("mark10_bbox_w", np.nan)
+        bh = feats.get("mark10_bbox_h", np.nan)
+
+        if not np.isnan(bx) and not np.isnan(by) and not np.isnan(bw) and not np.isnan(bh):
+            bx, by, bw, bh = int(bx), int(by), int(bw), int(bh)
+            cx = bx + bw // 2
+            cy = by + bh // 2
+            cv2.circle(vis, (cx, cy), 5, (255, 0, 255), -1)
 
         if 0 <= y_huincha < h:
             cv2.line(vis, (0, y_huincha), (w - 1, y_huincha), (255, 255, 0), 2)
@@ -220,6 +243,7 @@ def run_one(
             text_color=(255, 119, 119), bg_color=(0, 0, 0)
         )
 
+    # Importante: devolver SOLO 5 valores (como tu loop espera)
     return vis, feats, asent_modelo, error_pred, asent_corregido
 
 
@@ -249,7 +273,7 @@ with st.sidebar:
     do_overlay = st.checkbox("Overlay máscara", value=True)
     alpha_overlay = st.slider("Alpha overlay", 0.0, 1.0, 0.5, 0.05)
     draw_lines = st.checkbox("Dibujar líneas", value=True)
-    font_scale = st.slider("Tamaño texto", 0.5, 2.0, 1.2, 0.1)
+    font_scale = st.slider("Tamaño texto", 0.5, 2.0, 1.0, 0.1)
 
     st.divider()
     process_btn = st.button("Procesar", type="primary", use_container_width=True)
